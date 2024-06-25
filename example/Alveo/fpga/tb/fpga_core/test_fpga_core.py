@@ -30,10 +30,13 @@ import cocotb_test.simulator
 import cocotb
 from cocotb.log import SimLog
 from cocotb.triggers import RisingEdge, FallingEdge, Timer
+from cocotb.xt_printer import xt_print
+from cocotb.utils import get_sim_time
 
 from cocotbext.axi import AxiStreamBus
 from cocotbext.pcie.core import RootComplex
 from cocotbext.pcie.xilinx.us import UltraScalePlusPcieDevice
+from cocotbext.pcie.core.pci import PciDevice
 
 
 class TB(object):
@@ -275,16 +278,26 @@ class TB(object):
         await FallingEdge(self.dut.rst)
         await Timer(100, 'ns')
 
+        self.dut.debug_phase.value = 1
+
+        xt_print(f"self.rc.enumerate() start at {get_sim_time('ns')}")
         await self.rc.enumerate()
+        xt_print(f"self.rc.enumerate() end at {get_sim_time('ns')}")
 
         dev = self.rc.find_device(self.dev.functions[0].pcie_id)
+        assert isinstance(dev, PciDevice)
+        xt_print(f"dev.enable_device() start at {get_sim_time('ns')}")
         await dev.enable_device()
+        xt_print(f"dev.enable_device() end at {get_sim_time('ns')}")
         await dev.set_master()
+        xt_print(f"dev.set_master() end at {get_sim_time('ns')}")
         await dev.alloc_irq_vectors(32, 32)
+        xt_print(f"alloc irq vectors(32, 32) end at {get_sim_time('ns')}")
 
 
 @cocotb.test()
 async def run_test(dut):
+    from cocotbext.axi.address_space import Window
 
     tb = TB(dut)
 
@@ -299,8 +312,10 @@ async def run_test(dut):
     dev_pf0_bar2 = dev.bar_window[2]
 
     tb.log.info("Test memory write to BAR 2")
+    assert isinstance(dev_pf0_bar2, Window)
 
     test_data = b'\x11\x22\x33\x44'
+    xt_print(f"dev_pf0_bar2.write(0, test_data) at {get_sim_time('ns')}")
     await dev_pf0_bar2.write(0, test_data)
 
     await Timer(100, 'ns')
@@ -317,6 +332,7 @@ async def run_test(dut):
     mem[0:1024] = bytearray([x % 256 for x in range(1024)])
 
     # enable DMA
+    assert isinstance(dev_pf0_bar0, Window)
     await dev_pf0_bar0.write_dword(0x000000, 1)
     # enable interrupts
     await dev_pf0_bar0.write_dword(0x000008, 0x3)
@@ -354,6 +370,8 @@ async def run_test(dut):
     assert mem[0:1024] == mem[0x1000:0x1000+1024]
 
     tb.log.info("Test immediate write")
+
+    xt_print(f"Test immediate write at {get_sim_time('ns')}")
 
     # write pcie write descriptor
     await dev_pf0_bar0.write_dword(0x000200, (mem_base+0x1000) & 0xffffffff)
